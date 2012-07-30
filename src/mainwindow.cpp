@@ -13,18 +13,19 @@ MainWindow::MainWindow(const QUrl& url,const QStringList& configString)
     
     progress = 0;
 		cur_stage = 0;
-		timer = new QTimer;
+		timer_viewpost = new QTimer;
 		surfCount = 10;
 		
-		connect(timer, SIGNAL(timeout()), this , SLOT(onTimeOut()));
+		connect(timer_viewpost, SIGNAL(timeout()), this , SLOT(onTimerViewPost()));
 
-		timer2 = new QTimer;
+		timer_onboard = new QTimer;
 		
-		connect(timer2, SIGNAL(timeout()), this , SLOT(onTimeOut2()));
+		connect(timer_onboard, SIGNAL(timeout()), this , SLOT(onTimerOnBoard()));
 //! [1]
 
     QNetworkProxyFactory::setUseSystemConfiguration(true);
 
+	qsrand(QDateTime::currentDateTime().toTime_t());
 //! [2]
     view = new QWebView(this);
     view->load(url);
@@ -44,6 +45,7 @@ MainWindow::MainWindow(const QUrl& url,const QStringList& configString)
     setCentralWidget(view);
     setUnifiedTitleAndToolBarOnMac(true);
     this->resize(QSize(320,640));
+	initLocalServers();
 }
 
 void MainWindow::adjustTitle()
@@ -69,71 +71,94 @@ void MainWindow::finishLoading(bool b)
     
 
     
-    if (cur_stage == 0)
+    if (cur_stage == 0) //Login Page Finished
     {
-    	surfCount = getRandomInt(14,10);
-    	AutoLogin();
-    	//GotoTargetBoard();
+    	surfCount = getRandomInt(50,40);
+    	PageAction_Login();
     	cur_stage = 1;
     }
-    else if (cur_stage == 1)
+    else if (cur_stage == 1) //After Login Page Finished
     {
-    	GotoTargetBoard();
+    	PageAction_GotoTargetBoard();
     	cur_stage = 2;
     }
-    else if (cur_stage == 2)
+    else if (cur_stage == 2) //After Board Page Finished
     {
     	if (surfCount-- == 0 ) 
     	{
-    		 LogOut();
+    		 PageAction_Logout();
     		 cur_stage = 0;
     	}
-    	else
+    	else //Delay some time and execute PageAction_ViewPost();
     	{
-    		articleUrls = getArticleURL();
-    		AutoViewPost();
+			timer_viewpost->setSingleShot(true);
+			timer_viewpost->start(getRandomInt(2,2)*1000);
     		cur_stage = 3;
       }
     }  
     else if (cur_stage == 3)
     {
-    	
-    	timer2->setSingleShot(true);
-      timer2->start(getRandomInt(14,5)*1000);
+    	//Delay some time and execute PageAction_GotoTargetBoard();
+    	timer_onboard->setSingleShot(true);
+        timer_onboard->start(getRandomInt(14,5)*1000);
     	cur_stage = 2;
-    }      
+    }
+	else if (cur_stage == 10)
+	{
+		cur_stage = 11;
+		PageAction_Logout();
+	}
+	else if (cur_stage == 11)
+	{
+		qDebug()<<"force quit";
+		this->close();
+	}
 }
-//! [6]
 
-//! [7]
-void MainWindow::GotoTargetBoard()
+void MainWindow::onTimerViewPost()
 {
-    view->load(QUrl("http://m.newsmth.net/board/" + boardName));
+	if (cur_stage == 10)
+	{
+		cur_stage = 11;
+		PageAction_Logout();
+		return;
+	}
+	PageAction_ViewPost();
 }
-//! [7]
-
 //! [8]
-void MainWindow::onTimeOut()
+void MainWindow::onTimerOnBoard()
 {
-	 int nCount = articleUrls.size();
-	 qsrand(QDateTime::currentMSecsSinceEpoch());
-	 int nVal = getRandomInt(nCount);
-	 view->load(QUrl("http://m.newsmth.net" + articleUrls.at(nVal)));
-}
-//! [8]
-void MainWindow::onTimeOut2()
-{
-	 GotoTargetBoard();
+	if (cur_stage == 10)
+	{
+		cur_stage = 11;
+		PageAction_Logout();
+		return; 
+	}
+	 PageAction_GotoTargetBoard();
 }
 
-//! [9]
-void MainWindow::AutoViewPost()
+void MainWindow::PageAction_GotoTargetBoard()
 {
-	  timer->setSingleShot(true);
-    timer->start(getRandomInt(2,2)*1000);
+	view->load(QUrl("http://m.newsmth.net/board/" + boardName));
 }
 
-void MainWindow::AutoLogin()
+
+void MainWindow::PageAction_ViewPost()
+{
+	QStringList articleUrls;
+	QWebElementCollection collection = view->page()->mainFrame()->documentElement().findAll("a");
+	foreach (QWebElement e, collection) {
+		//qDebug()<<e.attribute("href");
+		QString s=e.attribute("href");
+		if (s.startsWith("/article")) articleUrls.append(s);
+	}
+	int nCount = articleUrls.size();
+	
+	int nVal = 1;//getRandomInt(nCount);
+	view->load(QUrl("http://m.newsmth.net" + articleUrls.at(nVal)));	
+}
+
+void MainWindow::PageAction_Login()
 {
     //QString code = "wraper.m_main.sec.id.value=\"stangray\";";
     //view->page()->mainFrame()->evaluateJavaScript(code);
@@ -147,25 +172,36 @@ void MainWindow::AutoLogin()
     view->page()->mainFrame()->evaluateJavaScript(code);
 }
 
-void MainWindow::LogOut()
+void MainWindow::PageAction_Logout()
 {
     view->load(QUrl("http://m.newsmth.net/user/logout"));
 }
 
-QStringList MainWindow::getArticleURL()
-{
-	QStringList r;
-	QWebElementCollection collection = view->page()->mainFrame()->documentElement().findAll("a");
-	foreach (QWebElement e, collection) {
-    //qDebug()<<e.attribute("href");
-    QString s=e.attribute("href");
-    if (s.startsWith("/article")) r.append(s);
-  }
-  return r;
-}
+
+
 
 int MainWindow::getRandomInt(int scale, int offset)
 {
 	return (int)((qreal)(qrand ()) * scale /RAND_MAX ) + offset;
 }
 
+void MainWindow::initLocalServers()
+{
+	localServerQuit = new QLocalServer(this);
+	QString localHandler = QString("IPC://%1/quit").arg(
+		QCoreApplication::applicationPid()
+		);
+	if (!localServerQuit->listen(localHandler)) {
+		close();
+		return;
+	}
+	qDebug()<<"PID: "<<localHandler;
+	connect(localServerQuit, SIGNAL(newConnection()), 
+		this, SLOT(onLocalServerQuitHandler()));
+}
+
+void MainWindow::onLocalServerQuitHandler()
+{
+	qDebug()<<"onLocalServerQuitHandler";
+	cur_stage=10;	
+}

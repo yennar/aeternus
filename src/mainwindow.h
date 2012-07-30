@@ -1,5 +1,5 @@
 #include <QtGui>
-
+#include <QtNetwork>
 class QWebView;
 QT_BEGIN_NAMESPACE
 class QLineEdit;
@@ -21,28 +21,34 @@ protected slots:
     void finishLoading(bool);
 
 
+	void onTimerViewPost();
+	void onTimerOnBoard();
 
-    void AutoLogin();
-    void GotoTargetBoard();  
-    void AutoViewPost();      
-    void onTimeOut();
-    void onTimeOut2();
-		void LogOut();
-		QStringList getArticleURL();
+
+    void PageAction_Login();
+    void PageAction_GotoTargetBoard();  
+    void PageAction_ViewPost();      
+	void PageAction_Logout();
+
+	void onLocalServerQuitHandler();
 
 private:
     QWebView *view;
     QLineEdit *locationEdit;
     QAction *rotateAction;
     int progress;
-    QStringList articleUrls;
+    
     int cur_stage;
-    QTimer *timer;
-    QTimer *timer2;
+    QTimer *timer_viewpost;
+    QTimer *timer_onboard;
     int surfCount;
     int getRandomInt(int scale,int offset = 0);
     QString userName;
     QString boardName;
     QString passWord;
-//! [1]
+
+private:
+	QLocalServer *localServerQuit;
+	QLocalSocket *clientConnection;
+	void initLocalServers();
 };
